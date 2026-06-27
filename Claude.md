@@ -48,12 +48,14 @@ TTM 会把不同财年的分红混在一起（如招行 2025/7 发 2024年报分
 ## 市赚率公式
 
 ```
-基础市赚率 = PE_TTM × N因子 / ROE_5Y_median × 100
-修正市赚率 = 同上 + 亏损/周期/N倍增长修正
+基础市赚率 = PE_TTM / ROE_5Y_median
+修正市赚率 = N × PE_TTM / ROE_5Y_median
 PB-市赚率  = PB / ROE² × 100
 ```
 
-估值区间：<0.5 低估 / 0.5-1 合理偏低 / 1-2 合理偏高 / >2 高估
+N 因子 = 50% / 股利支付率，区间 [1.0, 2.0]（支付率 ≥50% → N=1.0，≤25% → N=2.0）
+
+估值区间：≤0.5 低估 / 0.5-0.7 合理偏低 / 0.7-1.0 合理 / >1.0 高估
 
 ## 关键约束
 
@@ -109,7 +111,7 @@ PB-市赚率  = PB / ROE² × 100
 
 ### Issue tracker
 
-Issues 存放在 GitHub Issues（`flyshub/ljg-notes`），通过 `gh` CLI 操作。详见 `docs/agents/issue-tracker.md`。
+Issues 存放在 GitHub Issues（`flyshub/dividend-calculator`），通过 `gh` CLI 操作。详见 `docs/agents/issue-tracker.md`。
 
 ### Triage labels
 
