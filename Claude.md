@@ -1,0 +1,120 @@
+# 真实股息率计算工具
+
+基于 Python 的 A 股真实股息率 + 市赚率计算工具。技术栈：Python 3.9+、mootdx（通达信协议）、腾讯行情、ECharts 前端。
+
+## 常用命令
+
+```bash
+# 股息率计算
+python -m src.main 600987
+
+# 市赚率计算
+python calc_pr.py 600900
+
+# 启动 Web 服务
+python -m src.web
+
+# 运行全部测试
+cd dividend-calculator && python -m pytest -v
+
+# 运行单个测试
+python -m pytest tests/test_dividend.py -v
+```
+
+## 核心架构决策
+
+### 总额法 > 每股法
+
+```
+真实股息率 = 最近完整财年现金分红总额 / 当前总市值 × 100%
+```
+
+转送股会导致「每股分红/股价」被动变化，总额法分子分母来自同一截面，不受影响。
+
+### 最新完整财年 > TTM（滚动12个月）
+
+TTM 会把不同财年的分红混在一起（如招行 2025/7 发 2024年报分红 + 2026/1 发 2025半年报分红），虚高股息率。
+「最新完整财年」只取已公布年报的最新财年，半年报/季报分红属于未完成财年的中期分配，不单独构成完整财年。
+新年报除权后分子自动切换。
+
+### 三档税率
+
+| 持股时长 | 税率 | 字段 |
+|---------|------|------|
+| >1年 | 0% | `dividend_yield_before_tax` |
+| 1月~1年 | 10% | `dividend_yield_after_tax` |
+| <1月 | 20% | `dividend_yield_after_tax_20` |
+
+## 市赚率公式
+
+```
+基础市赚率 = PE_TTM × N因子 / ROE_5Y_median × 100
+修正市赚率 = 同上 + 亏损/周期/N倍增长修正
+PB-市赚率  = PB / ROE² × 100
+```
+
+估值区间：<0.5 低估 / 0.5-1 合理偏低 / 1-2 合理偏高 / >2 高估
+
+## 关键约束
+
+⚠️ **严禁虚构数据** — 所有数据来自公开市场真实信息，数据源不可用时返回错误。
+
+### A+H 股两地上市
+
+对于中远海控、中国铝业等 A+H 股，**必须用总股本**（含全部股份），不能用流通股本：
+- 腾讯行情 **Index 72**：仅A股股本/流通股本 ❌
+- 腾讯行情 **Index 73**：总股本 ✓
+
+### 财年判断
+
+半年报日期（9-12月除权）≠ 年报，不能误判为完整财年。只有 3-8月除权的才是年报。
+
+## 数据源架构（mootdx + 腾讯双引擎）
+
+| 数据 | 主数据源 | 备用 |
+|------|---------|------|
+| 实时价格 + K线 | mootdx（通达信协议，全球可用） | 腾讯 fqkline |
+| PE_TTM / PB | 腾讯行情 | 东方财富 push2 |
+| 总股本 | 腾讯 Index 73 / mootdx finance | — |
+| 除权除息 / 分红 | mootdx xdxr | — |
+| ROE / 净利润 | mootdx F10 财务分析 | 东方财富 push2 |
+| 行业分类 | mootdx F10 行业分析 | 东方财富 push2 |
+
+所有数据源均为全球可用（mootdx 走二进制通达信协议，腾讯走 HTTP），不再依赖东方财富服务器。
+
+## 开发坑位
+
+- mootdx 通达信协议全球可用，不依赖东方财富（解决海外 IP 限流问题）
+- 腾讯 fqkline 接口全球可用，走势图数据源首选
+- 半年报除权日通常在 9-12 月，要用除权日而非公告日推断财年
+- A+H 股必须用总股本（腾讯 Index 73），不能用流通股本（Index 72）
+- F10 财务分析表格第一列通常是 Q1 数据（非年报），解析时需过滤到仅 12-31
+- mootdx 的 fenhong 值有浮点精度问题（如 2.1 显示为 2.09999...），计算时需 `round(, 4)`
+
+## 开发规范
+
+本项目遵循以下 AI 编码原则：
+
+1. **先思考，再编码** — 明确任务目标，理清思路再动手
+2. **极简优先** — 用最简逻辑实现功能，不堆砌无用代码
+3. **精准限定修改范围** — 只改动需求相关代码
+4. **目标导向执行** — 先界定验收标准，分步落地开发
+
+## 参考文档
+
+- `dividend-calculator/README.md` — 完整使用文档（给人看）
+- `dividend-calculator/DATASOURCE_README.md` — 数据源架构详细说明
+
+## Agent skills
+
+### Issue tracker
+
+Issues 存放在 GitHub Issues（`flyshub/ljg-notes`），通过 `gh` CLI 操作。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+使用标准五标签体系：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+单一上下文布局 — 一个 `CONTEXT.md` + `docs/adr/` 在项目根目录。详见 `docs/agents/domain.md`。
