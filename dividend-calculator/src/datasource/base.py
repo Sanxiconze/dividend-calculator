@@ -92,14 +92,14 @@ class DividendProvider(Protocol):
         stock_info: StockInfo
     ) -> Tuple[float, Optional[str], List[DividendDetail], str]:
         """
-        获取最近一个完整财年的现金分红
+        获取近12个月(TTM)已除权现金分红
 
         Args:
             stock_code: 股票代码
             stock_info: 股票基本信息
 
         Returns:
-            (总分红金额, 年份, 分红明细, 说明)
+            (总分红金额, 最近分红标签, 分红明细, 说明)
         """
         ...
 

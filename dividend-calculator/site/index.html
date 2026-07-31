@@ -272,7 +272,7 @@
     <section class="hero">
       <h1>真实股息率计算器</h1>
       <p class="subtitle">输入 A 股股票代码或精确股票名称，调用本项目真实数据链路计算股息率。</p>
-      <div class="formula">真实股息率 = 最近完整财年现金分红总额 / 当前总市值</div>
+      <div class="formula">股息率TTM = 近12个月已除权现金分红总额 / 当前总市值</div>
     </section>
 
     <div style="max-width:1040px;margin:0 auto 20px;padding:12px 20px;background:#fefce8;border:1px solid #fde68a;border-radius:12px;">
@@ -301,22 +301,22 @@
       </div>
 
       <div class="result-card">
-        <div class="label">真实股息率（持股1年以上，免税）</div>
+        <div class="label">股息率TTM（持股1年以上，免税）</div>
         <div id="yield-before-tax" class="value yield"></div>
       </div>
 
       <div class="result-card">
-        <div class="label">真实股息率（持股1月以上但不足1年，扣税10%后）</div>
+        <div class="label">股息率TTM（持股1月以上但不足1年，扣税10%后）</div>
         <div id="yield-after-tax" class="value yield"></div>
       </div>
 
       <div class="result-card">
-        <div class="label">真实股息率（持股不足1月，扣税20%后）</div>
+        <div class="label">股息率TTM（持股不足1月，扣税20%后）</div>
         <div id="yield-after-tax-20" class="value yield"></div>
       </div>
 
       <div class="result-card">
-        <div class="label">最新分红年度</div>
+        <div class="label">最近分红</div>
         <div id="latest-year" class="value"></div>
       </div>
 
@@ -479,55 +479,39 @@
       if (chartResizeHandler) { window.removeEventListener('resize', chartResizeHandler); chartResizeHandler = null; }
     }
 
+    function pad2(n) { return n < 10 ? '0' + n : String(n); }
+
+    function fmtYMD(d) {
+      return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    }
+
+    function parseYMD(s) {
+      var p = String(s).split('-');
+      return new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+    }
+
     function computeDividendYields(monthlyPrices, dividendRecords) {
       if (!monthlyPrices.length) return [];
 
-      // Group dividends by fiscal year (extracted from report_time like "2024年报")
-      var fiscalYears = {};
-      for (var i = 0; i < dividendRecords.length; i++) {
-        var rec = dividendRecords[i];
-        if (!rec.ex_dividend_date || rec.dividend_per_10 <= 0) continue;
-        var yearMatch = rec.report_time.match(/\d{4}/);
-        if (!yearMatch) continue;
-        var year = parseInt(yearMatch[0]);
-
-        if (!fiscalYears[year]) {
-          fiscalYears[year] = { totalPer10: 0, hasAnnual: false, latestExDate: '' };
-        }
-        fiscalYears[year].totalPer10 += rec.dividend_per_10;
-        if (rec.report_time.indexOf('年报') !== -1 && rec.report_time.indexOf('半年报') === -1) {
-          fiscalYears[year].hasAnnual = true;
-        }
-        if (rec.ex_dividend_date > fiscalYears[year].latestExDate) {
-          fiscalYears[year].latestExDate = rec.ex_dividend_date;
-        }
-      }
-
-      // Build sorted list of complete fiscal years (must have annual report)
-      var completeYears = [];
-      for (var y in fiscalYears) {
-        if (fiscalYears[y].hasAnnual) {
-          completeYears.push({
-            year: parseInt(y),
-            totalPer10: fiscalYears[y].totalPer10,
-            availableDate: fiscalYears[y].latestExDate
-          });
-        }
-      }
-      completeYears.sort(function(a, b) { return a.year - b.year; });
-
       return monthlyPrices.map(function(month) {
-        // Latest complete fiscal year whose annual dividend was paid by this month
-        var selected = null;
-        for (var i = 0; i < completeYears.length; i++) {
-          if (completeYears[i].availableDate <= month.date) {
-            selected = completeYears[i];
+        // TTM: 该月往前推12个月内的已除权分红（除权日窗口 (m-365天, m]）
+        var monthEnd = parseYMD(month.date);
+        var windowStart = new Date(monthEnd);
+        windowStart.setDate(windowStart.getDate() - 364);
+        var startStr = fmtYMD(windowStart);
+
+        var totalPer10 = 0;
+        for (var i = 0; i < dividendRecords.length; i++) {
+          var rec = dividendRecords[i];
+          if (!rec.ex_dividend_date || rec.dividend_per_10 <= 0) continue;
+          if (rec.ex_dividend_date > startStr && rec.ex_dividend_date <= month.date) {
+            totalPer10 += rec.dividend_per_10;
           }
         }
 
         var yld = 0;
-        if (selected && month.close > 0) {
-          var dps = selected.totalPer10 / 10;
+        if (totalPer10 > 0 && month.close > 0) {
+          var dps = totalPer10 / 10;
           yld = (dps / month.close) * 100;
         }
 
@@ -535,7 +519,7 @@
           date: month.date,
           price: month.close,
           yield: parseFloat(yld.toFixed(2)),
-          fiscalYear: selected ? selected.year : null
+          inWindow: totalPer10 > 0
         };
       });
     }
@@ -614,7 +598,7 @@
               if (p.seriesName === '收盘价') {
                 html += '<br/>' + p.marker + ' 收盘价: ' + Number(p.value).toFixed(2) + ' 元';
               } else if (p.seriesName.indexOf('股息率') === 0) {
-                var fyLabel = yrData && yrData.fiscalYear ? '（' + yrData.fiscalYear + '年度）' : '';
+                var fyLabel = yrData && yrData.inWindow ? '（近12个月）' : '';
                 html += '<br/>' + p.marker + ' 股息率' + fyLabel + ': ' + Number(p.value).toFixed(2) + '%';
               }
             }
@@ -622,7 +606,7 @@
           }
         },
         legend: {
-          data: ['收盘价', '股息率(最新完整财年)'],
+          data: ['收盘价', '股息率(TTM)'],
           bottom: 5,
           textStyle: { fontSize: 12, color: '#667085' }
         },
@@ -705,7 +689,7 @@
             }
           },
           {
-            name: '股息率(最新完整财年)',
+            name: '股息率(TTM)',
             type: 'line',
             data: yieldValues,
             yAxisIndex: 1,
@@ -728,13 +712,10 @@
         var dividendRecords = results[1].filter(function (r) {
           return r.EX_DIVIDEND_DATE && r.PRETAX_BONUS_RMB > 0;
         }).map(function (r) {
-          var y = r.REPORT_DATE ? r.REPORT_DATE.slice(0, 4) : '';
-          var m = r.REPORT_DATE ? r.REPORT_DATE.slice(5, 7) : '';
-          var isAnnual = !(m === '06' || m === '09');
           return {
             ex_dividend_date: r.EX_DIVIDEND_DATE.slice(0, 10),
             dividend_per_10: r.PRETAX_BONUS_RMB,
-            report_time: y + (isAnnual ? '年报' : '半年报'),
+            report_time: Calculator.reportLabel(r.REPORT_DATE),
           };
         });
         return {

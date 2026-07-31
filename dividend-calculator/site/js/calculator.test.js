@@ -98,42 +98,58 @@ test('calculateDividendYield 零市值', () => {
   assert.deepEqual(Calc.calculateDividendYield(100, 0), [0, 0, 0]);
 });
 
-// ---- parseDividendRecords ----
-test('parseDividendRecords 半年报+年报合并同财年', () => {
+// ---- parseDividendRecords（TTM：除权日落在 (ref-365天, ref] 窗口）----
+test('parseDividendRecords TTM 窗口内合并多笔分红', () => {
+  const ref = new Date(2026, 6, 31); // 2026-07-31
   const rows = [
-    { REPORT_DATE: '2025-12-31 00:00:00', PRETAX_BONUS_RMB: 7.9, ASSIGN_PROGRESS: '实施分配' },
-    { REPORT_DATE: '2025-06-30 00:00:00', PRETAX_BONUS_RMB: 2.1, ASSIGN_PROGRESS: '实施分配' },
-    { REPORT_DATE: '2024-12-31 00:00:00', PRETAX_BONUS_RMB: 8.2, ASSIGN_PROGRESS: '实施分配' },
+    { REPORT_DATE: '2026-03-31 00:00:00', PRETAX_BONUS_RMB: 2.1, ASSIGN_PROGRESS: '实施分配', EX_DIVIDEND_DATE: '2026-06-02 00:00:00' },
+    { REPORT_DATE: '2025-12-31 00:00:00', PRETAX_BONUS_RMB: 4.0, ASSIGN_PROGRESS: '实施分配', EX_DIVIDEND_DATE: '2026-05-22 00:00:00' },
+    { REPORT_DATE: '2025-09-30 00:00:00', PRETAX_BONUS_RMB: 2.1, ASSIGN_PROGRESS: '实施分配', EX_DIVIDEND_DATE: '2025-11-06 00:00:00' },
+    { REPORT_DATE: '2025-06-30 00:00:00', PRETAX_BONUS_RMB: 2.1, ASSIGN_PROGRESS: '实施分配', EX_DIVIDEND_DATE: '2025-09-04 00:00:00' },
+    { REPORT_DATE: '2025-03-31 00:00:00', PRETAX_BONUS_RMB: 2.1, ASSIGN_PROGRESS: '实施分配', EX_DIVIDEND_DATE: '2025-05-27 00:00:00' }, // 窗口外
+    { REPORT_DATE: '2025-12-31 00:00:00', PRETAX_BONUS_RMB: 9.9, ASSIGN_PROGRESS: '预披露', EX_DIVIDEND_DATE: '2026-05-22 00:00:00' }, // 预披露排除
   ];
-  const r = Calc.parseDividendRecords(rows, 1000);
-  assert.equal(r.year, '2025');
-  assert.equal(r.totalDividend, (7.9 + 2.1) / 10 * 1000);
-  assert.equal(r.details.length, 2);
+  const r = Calc.parseDividendRecords(rows, 1000, ref);
+  assert.equal(r.totalDividend, (2.1 + 4.0 + 2.1 + 2.1) / 10 * 1000);
+  assert.equal(r.year, '2026一季报'); // 最近一次除权(2026-06-02)对应 2026-03-31 报告期
+  assert.equal(r.details.length, 4);
+  assert.equal(r.details[0].report_time, '2025半年报'); // 2025-09-04 除权（2025-06-30 报告期）
+  assert.equal(r.details[3].report_time, '2026一季报');
+  assert.ok(r.explanation.indexOf('近12个月(2025-08-01至2026-07-31)') === 0);
+});
+test('parseDividendRecords 无除权日(未实施)跳过', () => {
+  const ref = new Date(2026, 6, 31);
+  const rows = [
+    { REPORT_DATE: '2025-12-31 00:00:00', PRETAX_BONUS_RMB: 5, ASSIGN_PROGRESS: '股东大会决议通过', EX_DIVIDEND_DATE: '' },
+  ];
+  const r = Calc.parseDividendRecords(rows, 1000, ref);
+  assert.equal(r.totalDividend, 0);
+  assert.equal(r.year, null);
 });
 test('parseDividendRecords 排除预披露', () => {
+  const ref = new Date(2026, 6, 31);
   const rows = [
-    { REPORT_DATE: '2025-12-31 00:00:00', PRETAX_BONUS_RMB: 5, ASSIGN_PROGRESS: '预披露' },
-    { REPORT_DATE: '2024-12-31 00:00:00', PRETAX_BONUS_RMB: 3, ASSIGN_PROGRESS: '实施分配' },
+    { REPORT_DATE: '2025-12-31 00:00:00', PRETAX_BONUS_RMB: 5, ASSIGN_PROGRESS: '预披露', EX_DIVIDEND_DATE: '2026-05-22 00:00:00' },
+    { REPORT_DATE: '2024-12-31 00:00:00', PRETAX_BONUS_RMB: 3, ASSIGN_PROGRESS: '实施分配', EX_DIVIDEND_DATE: '2025-05-23 00:00:00' },
   ];
-  const r = Calc.parseDividendRecords(rows, 1000);
-  assert.equal(r.year, '2024');
-  assert.equal(r.totalDividend, 3 / 10 * 1000);
+  const r = Calc.parseDividendRecords(rows, 1000, ref);
+  assert.equal(r.totalDividend, 0); // 2025-05-23 不在窗口内
+  assert.equal(r.year, null);
 });
-test('parseDividendRecords 非标月份(5/7/8/10/11)按年报', () => {
-  // 对齐 _parse_fhps_detail: 6/9月为半年报，其余月份均为年报
+test('parseDividendRecords 报告期标签', () => {
+  const ref = new Date(2026, 6, 31);
   const rows = [
-    { REPORT_DATE: '2025-07-31 00:00:00', PRETAX_BONUS_RMB: 4, ASSIGN_PROGRESS: '实施分配' },
-    { REPORT_DATE: '2025-06-30 00:00:00', PRETAX_BONUS_RMB: 2, ASSIGN_PROGRESS: '实施分配' },
-    { REPORT_DATE: '2025-09-30 00:00:00', PRETAX_BONUS_RMB: 1, ASSIGN_PROGRESS: '实施分配' },
+    { REPORT_DATE: '2025-12-31 00:00:00', PRETAX_BONUS_RMB: 4, ASSIGN_PROGRESS: '实施分配', EX_DIVIDEND_DATE: '2026-05-22 00:00:00' },
+    { REPORT_DATE: '2025-09-30 00:00:00', PRETAX_BONUS_RMB: 2, ASSIGN_PROGRESS: '实施分配', EX_DIVIDEND_DATE: '2025-11-06 00:00:00' },
+    { REPORT_DATE: '2025-06-30 00:00:00', PRETAX_BONUS_RMB: 2, ASSIGN_PROGRESS: '实施分配', EX_DIVIDEND_DATE: '2025-09-04 00:00:00' },
   ];
-  const r = Calc.parseDividendRecords(rows, 1000);
-  assert.equal(r.year, '2025');
-  // 07月(年报) + 06月(半年报) + 09月(半年报) → 财年 2025 有年报
-  assert.equal(r.details.filter(d => d.report_time === '2025年报').length, 1);
-  assert.equal(r.totalDividend, (4 + 2 + 1) / 10 * 1000);
+  const r = Calc.parseDividendRecords(rows, 1000, ref);
+  assert.equal(r.details.length, 3);
+  assert.deepEqual(r.details.map(d => d.report_time), ['2025半年报', '2025三季报', '2025年报']);
+  assert.equal(r.totalDividend, (4 + 2 + 2) / 10 * 1000);
 });
 test('parseDividendRecords 无分红', () => {
-  const r = Calc.parseDividendRecords([], 1000);
+  const r = Calc.parseDividendRecords([], 1000, new Date(2026, 6, 31));
   assert.equal(r.totalDividend, 0);
   assert.equal(r.year, null);
 });

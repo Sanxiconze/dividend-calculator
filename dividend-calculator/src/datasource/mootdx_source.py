@@ -131,9 +131,9 @@ class MootdxSource:
     def get_latest_dividend(
         self, stock_code: str, stock_info: StockInfo
     ) -> Tuple[float, Optional[str], List[DividendDetail], str]:
-        """获取最近一个完整财年的现金分红总额
+        """获取近12个月(TTM)已除权现金分红总额
 
-        通过 xdxr() 获取除权除息记录，按财年分组，取最新有年报的完整财年。
+        通过 xdxr() 获取除权除息记录，统计除权日落在 TTM 窗口内的分红。
         """
         try:
             client = self._get_client()
@@ -150,15 +150,22 @@ class MootdxSource:
             return 0.0, None, [], f"mootdx 分红获取失败: {e}"
 
     def _parse_xdxr(
-        self, df, stock_info: StockInfo
+        self, df, stock_info: StockInfo, ref_date=None
     ) -> Tuple[float, Optional[str], List[DividendDetail], str]:
-        """解析 xdxr 除权除息数据，提取最近完整财年分红"""
+        """解析 xdxr 除权除息数据，提取近12个月(TTM)已除权分红"""
+        import datetime
+
+        ref_date = ref_date or datetime.date.today()
+        cutoff = ref_date - datetime.timedelta(days=365)
+        window_start = cutoff + datetime.timedelta(days=1)
+        window = f"{window_start.isoformat()}至{ref_date.isoformat()}"
+
         # 只取除权除息记录（category=1）
         df = df[df['category'] == 1].copy()
         if df.empty:
             return 0.0, None, [], "无除权除息记录"
 
-        # 推断每条记录的财年和报告类型
+        # 收集 TTM 窗口内的除权记录
         records = []
         for _, row in df.iterrows():
             try:
@@ -170,65 +177,44 @@ class MootdxSource:
             if fenhong <= 0:
                 continue
 
+            ex_date = datetime.date(y, m, d)
+            if not (cutoff < ex_date <= ref_date):
+                continue
+
             result = infer_fiscal_year(y, m)
-            fiscal_year, is_annual = result.year, result.is_annual
             records.append({
-                'fiscal_year': fiscal_year,
-                'is_annual': is_annual,
+                'ex': ex_date,
                 'fenhong': fenhong,
-                'date': f"{y:04d}-{m:02d}-{d:02d}",
+                'report_time': result.report_time,
             })
 
         if not records:
-            return 0.0, None, [], "无有效除权除息记录"
+            return 0.0, None, [], f"近12个月({window})无已除权分红"
 
-        # 按财年分组
-        from collections import defaultdict
-        yearly: Dict[int, Dict] = defaultdict(
-            lambda: {'total': 0.0, 'has_annual': False, 'details': []}
-        )
-        for r in records:
-            fy = r['fiscal_year']
-            yearly[fy]['total'] += r['fenhong']
-            yearly[fy]['has_annual'] = yearly[fy]['has_annual'] or r['is_annual']
-            yearly[fy]['details'].append(
-                DividendDetail(
-                    report_time=f"{fy}{'年报' if r['is_annual'] else '中报'}",
-                    dividend_per_10=r['fenhong'],
-                )
-            )
-
-        # 选最新有年报的财年
-        for fy in sorted(yearly.keys(), reverse=True):
-            if yearly[fy]['has_annual']:
-                return self._build_dividend_result(fy, yearly[fy], stock_info)
-
-        # 回退：最近财年（无年报时）
-        latest_fy = max(yearly.keys())
-        logger.warning("未找到有年报的财年，回退到最近财年: %s", latest_fy)
-        return self._build_dividend_result(latest_fy, yearly[latest_fy], stock_info)
-
-    def _build_dividend_result(
-        self, fiscal_year: int, year_data: dict, stock_info: StockInfo
-    ) -> Tuple[float, Optional[str], List[DividendDetail], str]:
-        """根据年度汇总数据构建返回结果"""
-        total_per_10 = year_data['total']
+        records.sort(key=lambda r: r['ex'])
+        total_per_10 = sum(r['fenhong'] for r in records)
         dps = total_per_10 / 10.0
         total_shares = stock_info.total_shares
         total_dividend = dps * total_shares
 
+        details = [
+            DividendDetail(report_time=r['report_time'], dividend_per_10=r['fenhong'])
+            for r in records
+        ]
+        latest_label = records[-1]['report_time']
+
         dividend_list = [
             f"{d.report_time}: 10派{d.dividend_per_10}元"
-            for d in year_data['details']
+            for d in details
         ]
         explanation = (
-            f"{fiscal_year}年度 {'，'.join(dividend_list)}，"
+            f"近12个月({window})除权分红：{'，'.join(dividend_list)}，"
             f"合计10派{total_per_10:.3f}元(每股{dps:.4f}元)，"
             f"总股本{total_shares / 1e8:.2f}亿股，"
             f"总分红{total_dividend / 1e8:.2f}亿元"
         )
 
-        return total_dividend, str(fiscal_year), year_data['details'], explanation
+        return total_dividend, latest_label, details, explanation
 
     # ── F10 资料解析（财务 + 行业）──────────────────────────────
 

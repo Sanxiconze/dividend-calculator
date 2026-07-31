@@ -13,6 +13,7 @@
     python scripts/verify_js_vs_python.py 600900 600987 ...
 """
 import json
+import math
 import subprocess
 import sys
 import tempfile
@@ -133,6 +134,7 @@ def compute_python(raw: dict) -> dict:
             "报告期": r["REPORT_DATE"],
             "现金分红-现金分红比例": r["PRETAX_BONUS_RMB"],
             "方案进度": r["ASSIGN_PROGRESS"],
+            "除权除息日": r.get("EX_DIVIDEND_DATE"),
         }
         for r in raw["dividend_rows"]
     ])
@@ -266,7 +268,10 @@ JS_RUNNER = PROJECT_ROOT / "site" / "js" / "verify_raw.js"
 
 
 def run_js(fixture_path: str) -> dict:
-    out = subprocess.run(["node", str(JS_RUNNER), fixture_path], capture_output=True, text=True, check=True)
+    out = subprocess.run(
+        ["node", str(JS_RUNNER), fixture_path],
+        capture_output=True, text=True, encoding="utf-8", check=True,
+    )
     return json.loads(out.stdout)
 
 
@@ -278,7 +283,7 @@ def close(a, b):
     if a is None or b is None:
         return a is None and b is None
     if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-        return abs(a - b) <= TOLERANCE
+        return math.isclose(a, b, rel_tol=1e-9, abs_tol=1e-6)
     return a == b
 
 
@@ -291,7 +296,7 @@ def main():
         raw = fetch_raw(code)
         fixture["stocks"][code] = raw
 
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, dir="/tmp") as f:
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, dir=tempfile.gettempdir(), encoding="utf-8") as f:
         json.dump(fixture, f, ensure_ascii=False)
         fixture_path = f.name
 

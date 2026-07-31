@@ -35,6 +35,34 @@
     return year + (isAnnual ? '年报' : '中报');
   }
 
+  /* 报告期 → 展示标签（对齐 _report_label）：12→年报，6→半年报，3→一季报，9→三季报 */
+  function reportLabel(reportDate) {
+    var m = /^(\d{4})-(\d{2})/.exec(reportDate || '');
+    if (!m) return String(reportDate || '').slice(0, 10);
+    var y = m[1];
+    var mon = parseInt(m[2], 10);
+    if (mon === 12) return y + '年报';
+    if (mon === 6) return y + '半年报';
+    if (mon === 3) return y + '一季报';
+    if (mon === 9) return y + '三季报';
+    return y + '-' + m[2];
+  }
+
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+
+  function fmtYMD(d) {
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+
+  /* TTM 窗口: (ref-365天, ref]，返回 [startStr(窗口起点), refStr] */
+  function ttmWindow(ref) {
+    var cutoff = new Date(ref);
+    cutoff.setDate(cutoff.getDate() - 365);
+    var start = new Date(ref);
+    start.setDate(start.getDate() - 364);
+    return [fmtYMD(start), fmtYMD(ref)];
+  }
+
   function calculateDividendYield(totalDividend, totalMarketCap) {
     if (totalMarketCap <= 0) return [0.0, 0.0, 0.0];
     var before = (totalDividend / totalMarketCap) * 100;
@@ -42,54 +70,54 @@
   }
 
   /* ── 分红解析（对齐 _parse_fhps_detail，输入为东财 RPT_SHAREBONUS_DET 行）──
-   * 行字段: REPORT_DATE (YYYY-MM-DD ...), PRETAX_BONUS_RMB (每10股派息)
-   * 返回: { totalDividend, year, details:[{report_time, dividend_per_10}], explanation }
+   * 行字段: REPORT_DATE (YYYY-MM-DD ...), PRETAX_BONUS_RMB (每10股派息),
+   *         EX_DIVIDEND_DATE (除权除息日)
+   * TTM: 只统计除权除息日落在 (refDate-365天, refDate] 窗口内的已除权分红。
+   * 返回: { totalDividend, year(最近分红标签), details:[{report_time, dividend_per_10}],
+   *        explanation }
    */
-  function parseDividendRecords(rows, totalShares) {
-    var yearly = {};
-    var reportDate = /^(\d{4})-(\d{2})/;
+  function parseDividendRecords(rows, totalShares, refDate) {
+    var ref = refDate || new Date();
+    var win = ttmWindow(ref);
+    var startStr = win[0], refStr = win[1];
 
+    var records = [];
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
       if (row.ASSIGN_PROGRESS === '预披露') continue;
       var dp10 = Number(row.PRETAX_BONUS_RMB);
       if (!(dp10 > 0)) continue;
-      var m = reportDate.exec(row.REPORT_DATE || '');
-      if (!m) continue;
-      var y = parseInt(m[1], 10);
-      var month = parseInt(m[2], 10);
-      /* 与 Python 一致: 12/3/4月为年报，6/9月为半年报，其余月份也按年报 */
-      var isAnnual = !(month === 6 || month === 9);
-      var label = isAnnual ? (y + '年报') : (y + '半年报');
-
-      if (!yearly[y]) yearly[y] = { total: 0, hasAnnual: false, details: [] };
-      yearly[y].total += dp10;
-      yearly[y].hasAnnual = yearly[y].hasAnnual || isAnnual;
-      yearly[y].details.push({ report_time: label, dividend_per_10: dp10 });
+      var ex = String(row.EX_DIVIDEND_DATE || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ex)) continue;
+      if (!(ex > startStr && ex <= refStr)) continue;
+      records.push({ ex: ex, dp10: dp10, label: reportLabel(row.REPORT_DATE) });
     }
 
-    var years = Object.keys(yearly).map(Number).sort(function (a, b) { return b - a; });
-    if (!years.length) return { totalDividend: 0, year: null, details: [], explanation: '无有效分红数据' };
-
-    var target = null;
-    for (var j = 0; j < years.length; j++) {
-      if (yearly[years[j]].hasAnnual) { target = yearly[years[j]]; target.year = years[j]; break; }
+    if (!records.length) {
+      return { totalDividend: 0, year: null, details: [], explanation: '近12个月(' + startStr + '至' + refStr + ')无已除权分红' };
     }
-    if (!target) { target = yearly[years[0]]; target.year = years[0]; }
 
-    var totalPer10 = target.total;
+    records.sort(function (a, b) { return a.ex < b.ex ? -1 : 1; });
+
+    var totalPer10 = 0;
+    for (var j = 0; j < records.length; j++) totalPer10 += records[j].dp10;
     var dps = totalPer10 / 10.0;
     var totalDividend = dps * totalShares;
 
-    var list = target.details.map(function (d) {
+    var details = records.map(function (r) {
+      return { report_time: r.label, dividend_per_10: r.dp10 };
+    });
+    var latest = records[records.length - 1];
+
+    var list = details.map(function (d) {
       return d.report_time + ': 10派' + pyFloat(d.dividend_per_10) + '元';
     });
-    var explanation = String(target.year) + '年度 ' + list.join('，') +
+    var explanation = '近12个月(' + startStr + '至' + refStr + ')除权分红：' + list.join('，') +
       '，合计10派' + totalPer10.toFixed(3) + '元(每股' + dps.toFixed(4) + '元)，' +
       '总股本' + (totalShares / 1e8).toFixed(2) + '亿股，' +
       '总分红' + (totalDividend / 1e8).toFixed(2) + '亿元';
 
-    return { totalDividend: totalDividend, year: String(target.year), details: target.details, explanation: explanation };
+    return { totalDividend: totalDividend, year: latest.label, details: details, explanation: explanation };
   }
 
   /* ── 财务数据（对齐 pr.py _get_financial，输入为东财 RPT_F10_FINANCE_MAINFINADATA 行）
@@ -259,6 +287,8 @@
   return {
     inferFiscalYear: inferFiscalYear,
     reportTime: reportTime,
+    reportLabel: reportLabel,
+    fmtYMD: fmtYMD,
     calculateDividendYield: calculateDividendYield,
     parseDividendRecords: parseDividendRecords,
     parseFinancials: parseFinancials,

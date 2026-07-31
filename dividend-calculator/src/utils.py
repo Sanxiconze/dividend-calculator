@@ -215,11 +215,14 @@ def parse_dividend_df(
     report_col: str = "报告时间",
     scheme_col: str = "分红方案说明",
     payout_col: Optional[str] = None,
+    ex_date_col: Optional[str] = None,
+    ref_date: Optional[object] = None,
 ) -> Tuple[float, Optional[str], List[DividendDetail], str]:
     """
-    解析分红 DataFrame 的公共逻辑
+    解析分红 DataFrame 的公共逻辑 — 近12个月(TTM)已除权现金分红
 
-    统一处理：提取年份、判断年报、汇总同年度分红、计算总额
+    只统计除权除息日落在 (ref_date-365天, ref_date] 窗口内的记录。
+    除权日列缺失时回退使用报告期日期（兜底近似，见 dividend.py 方式3）。
 
     Args:
         dividend_df: 原始分红数据
@@ -227,19 +230,24 @@ def parse_dividend_df(
         report_col: 报告时间列名
         scheme_col: 分红方案说明列名
         payout_col: 直接派息比例列名（可选，优先使用）
+        ex_date_col: 除权除息日列名（可选；缺失时回退 report_col）
+        ref_date: 参考日期（默认今天），TTM 窗口右边界
 
     Returns:
-        (总分红金额, 年份, 分红明细, 说明)
+        (总分红金额, 最近分红标签, 分红明细, 说明)
     """
+    import datetime
+
     if dividend_df.empty:
         return 0.0, None, [], "无分红数据"
 
-    # 提取年份
-    dividend_df = dividend_df.copy()
-    dividend_df["report_year"] = dividend_df[report_col].apply(extract_report_year)
-    dividend_df["is_annual"] = dividend_df[report_col].apply(is_annual_report)
+    ref_date = ref_date or datetime.date.today()
+    cutoff = ref_date - datetime.timedelta(days=365)
+    window_start = cutoff + datetime.timedelta(days=1)
+    window = f"{window_start.isoformat()}至{ref_date.isoformat()}"
 
     # 提取每10股分红金额
+    dividend_df = dividend_df.copy()
     if payout_col and payout_col in dividend_df.columns:
         # 优先使用直接的派息比例列（数值型，最准确）
         dividend_df["dividend_per_10"] = pd.to_numeric(
@@ -254,51 +262,50 @@ def parse_dividend_df(
         return 0.0, None, [], "无法提取分红金额：缺少派息比例列和分红方案说明列"
 
     # 过滤无效记录
-    dividend_df = dividend_df.dropna(subset=["report_year", "dividend_per_10"])
-    dividend_df = dividend_df[dividend_df["dividend_per_10"] > 0.0].copy()
+    dividend_df = dividend_df[dividend_df["dividend_per_10"] > 0.0]
 
     if dividend_df.empty:
-        return 0.0, None, [], "无有效分红数据"
+        return 0.0, None, [], f"近12个月({window})无已除权分红"
 
-    # 按年份分组，优先选择有年报的最近年度
-    yearly_totals = []
-    for year in sorted(dividend_df["report_year"].unique(), reverse=True):
-        year_records = dividend_df[dividend_df["report_year"] == year]
-        total_for_year = year_records["dividend_per_10"].sum()
-        has_annual = year_records["is_annual"].any()
-        yearly_totals.append((year, total_for_year, year_records, has_annual))
+    # 除权日：优先除权日列，缺失时回退报告期（兜底近似）
+    ex_col = ex_date_col if (ex_date_col and ex_date_col in dividend_df.columns) else report_col
 
-    if not yearly_totals:
-        return 0.0, None, [], "无有效分红数据"
+    def _to_date(v):
+        if v is None or pd.isna(v):
+            return None
+        if isinstance(v, datetime.datetime):
+            return v.date()
+        if isinstance(v, datetime.date):
+            return v
+        try:
+            return datetime.date.fromisoformat(str(v).strip()[:10])
+        except ValueError:
+            return None
 
-    # 选择最近的完整年度（必须有年报）
-    target_year = None
-    total_dividend_per_10 = 0.0
-    target_dividends = None
-    for year, total, records, has_annual in yearly_totals:
-        if has_annual:
-            target_year = year
-            total_dividend_per_10 = total
-            target_dividends = records
-            break
+    # 过滤出 TTM 窗口内的已除权分红，按除权日升序
+    records = []
+    for _, row in dividend_df.iterrows():
+        dp10 = float(row["dividend_per_10"])
+        if dp10 != dp10 or dp10 <= 0:  # NaN check
+            continue
+        ex_date = _to_date(row.get(ex_col))
+        if ex_date is None:
+            continue
+        if not (cutoff < ex_date <= ref_date):
+            continue
+        records.append({"ex": ex_date, "dp10": dp10, "report_time": str(row[report_col])})
 
-    # 如果没有找到有年报的年份，回退到最近年份
-    if target_year is None:
-        target_year, total_dividend_per_10, target_dividends, _ = yearly_totals[0]
-        logger.warning("未找到有年报的年份，回退到最近年份: %s", target_year)
+    if not records:
+        return 0.0, None, [], f"近12个月({window})无已除权分红"
 
-    if target_dividends.empty:
-        return 0.0, None, [], f"{target_year}年无分红数据"
+    records.sort(key=lambda r: r["ex"])
 
     # 构建分红明细
-    dividend_details = []
-    total_dividend_per_10 = 0.0
-    for _, row in target_dividends.iterrows():
-        dp10 = float(row["dividend_per_10"])
-        total_dividend_per_10 += dp10
-        dividend_details.append(
-            DividendDetail(str(row[report_col]), dp10)
-        )
+    dividend_details = [
+        DividendDetail(r["report_time"], r["dp10"]) for r in records
+    ]
+    total_dividend_per_10 = sum(r["dp10"] for r in records)
+    latest_label = records[-1]["report_time"]
 
     # 计算总分红
     dps = total_dividend_per_10 / 10.0
@@ -309,10 +316,10 @@ def parse_dividend_df(
         f"{d.report_time}: 10派{d.dividend_per_10}元" for d in dividend_details
     ]
     explanation = (
-        f"{target_year}年度 {', '.join(dividend_list)}, "
-        f"合计10派{total_dividend_per_10:.3f}元(每股{dps:.4f}元), "
-        f"总股本{total_shares / 1e8:.2f}亿股, "
+        f"近12个月({window})除权分红：{'，'.join(dividend_list)}，"
+        f"合计10派{total_dividend_per_10:.3f}元(每股{dps:.4f}元)，"
+        f"总股本{total_shares / 1e8:.2f}亿股，"
         f"总分红{total_dividend / 1e8:.2f}亿元"
     )
 
-    return total_dividend, str(int(target_year)), dividend_details, explanation
+    return total_dividend, latest_label, dividend_details, explanation

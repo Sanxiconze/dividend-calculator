@@ -6,8 +6,14 @@ import pytest
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.dividend import calculate_dividend_yield, calculate_true_dividend_yield
+from src.dividend import (
+    calculate_dividend_yield,
+    calculate_true_dividend_yield,
+    _parse_fhps_detail,
+)
 from src.datasource.base import StockInfo, DividendDetail
+import datetime
+import pandas as pd
 
 
 def test_calculate_dividend_yield():
@@ -101,3 +107,71 @@ def test_di_seam_invalid_stock():
         dividend_provider=_fake_dividend,
     )
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _parse_fhps_detail TTM 解析 — 窗口 (ref-365天, ref] 内已除权分红
+# ---------------------------------------------------------------------------
+
+def _fhps_df(rows):
+    return pd.DataFrame(rows, columns=[
+        "报告期", "现金分红-现金分红比例", "方案进度", "除权除息日",
+    ])
+
+
+def test_parse_fhps_detail_ttm_window():
+    """002555 真实数据形态：仅统计近12个月已除权分红，标签取最近除权的报告期。"""
+    ref = datetime.date(2026, 7, 31)  # 窗口 (2025-07-31, 2026-07-31]
+    df = _fhps_df([
+        ("2026-03-31", 2.1, "实施分配", "2026-06-02"),
+        ("2025-12-31", 4.0, "实施分配", "2026-05-22"),
+        ("2025-09-30", 2.1, "实施分配", "2025-11-06"),
+        ("2025-06-30", 2.1, "实施分配", "2025-09-04"),
+        ("2025-03-31", 2.1, "实施分配", "2025-05-27"),  # 窗口外
+    ])
+    info = StockInfo(stock_code="002555", current_price=10.0, total_shares=10_000_000.0)
+
+    total_div, year, details, expl = _parse_fhps_detail(df, info, ref_date=ref)
+
+    assert year == "2026一季报"  # 最近除权(2026-06-02)对应 2026-03-31 报告期
+    assert total_div == pytest.approx(10.3 / 10 * 10_000_000)
+    assert len(details) == 4
+    assert details[0].report_time == "2025半年报"   # 2025-09-04 除权
+    assert details[-1].report_time == "2026一季报"
+    assert [d.dividend_per_10 for d in details] == [2.1, 2.1, 4.0, 2.1]
+    assert "近12个月(2025-08-01至2026-07-31)除权分红" in expl
+    assert "合计10派10.300元" in expl
+
+
+def test_parse_fhps_detail_excludes_pending():
+    """预披露 + 无除权除息日(未实施) 的行不参与 TTM 统计。"""
+    ref = datetime.date(2026, 7, 31)
+    df = _fhps_df([
+        ("2025-12-31", 5.0, "预披露", "2026-05-22"),      # 预披露排除
+        ("2025-12-31", 4.0, "股东大会决议通过", ""),      # 无除权日排除
+        ("2025-12-31", 3.0, "实施分配", "2025-05-23"),    # 窗口外排除
+        ("2025-12-31", 3.0, "实施分配", "2026-05-22"),    # 有效
+    ])
+    info = StockInfo(stock_code="600000", current_price=10.0, total_shares=10_000_000.0)
+
+    total_div, year, details, expl = _parse_fhps_detail(df, info, ref_date=ref)
+
+    assert year == "2025年报"
+    assert len(details) == 1
+    assert total_div == pytest.approx(3.0 / 10 * 10_000_000)
+
+
+def test_parse_fhps_detail_empty_window():
+    """窗口内无分红 → total=0, latest=None。"""
+    ref = datetime.date(2026, 7, 31)
+    df = _fhps_df([
+        ("2025-12-31", 3.0, "实施分配", "2025-05-23"),  # 窗口外
+    ])
+    info = StockInfo(stock_code="600000", current_price=10.0, total_shares=10_000_000.0)
+
+    total_div, year, details, expl = _parse_fhps_detail(df, info, ref_date=ref)
+
+    assert total_div == 0.0
+    assert year is None
+    assert details == []
+    assert "无已除权分红" in expl
