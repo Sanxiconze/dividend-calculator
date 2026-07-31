@@ -302,7 +302,8 @@ def parse_dividend_df(
 
     # 构建分红明细
     dividend_details = [
-        DividendDetail(r["report_time"], r["dp10"]) for r in records
+        DividendDetail(r["report_time"], r["dp10"], ex_dividend_date=r["ex"].isoformat())
+        for r in records
     ]
     total_dividend_per_10 = sum(r["dp10"] for r in records)
     latest_label = records[-1]["report_time"]

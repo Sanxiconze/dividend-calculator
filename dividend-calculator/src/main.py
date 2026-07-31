@@ -68,7 +68,8 @@ def dividend(stock_input):
         click.echo()
         click.echo("分红明细:")
         for detail in result.dividend_details:
-            click.echo(f"  {detail.report_time}: 10派{detail.dividend_per_10}元")
+            ex = f"（{detail.ex_dividend_date}除权）" if detail.ex_dividend_date else ""
+            click.echo(f"  {detail.report_time}: 10派{detail.dividend_per_10}元{ex}")
 
     click.echo()
     click.echo(f"真实股息率(含税): {result.dividend_yield_before_tax:.2f}%")

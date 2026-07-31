@@ -198,7 +198,11 @@ class MootdxSource:
         total_dividend = dps * total_shares
 
         details = [
-            DividendDetail(report_time=r['report_time'], dividend_per_10=r['fenhong'])
+            DividendDetail(
+                report_time=r['report_time'],
+                dividend_per_10=r['fenhong'],
+                ex_dividend_date=r['ex'].isoformat(),
+            )
             for r in records
         ]
         latest_label = records[-1]['report_time']

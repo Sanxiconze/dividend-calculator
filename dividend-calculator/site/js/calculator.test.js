@@ -114,7 +114,9 @@ test('parseDividendRecords TTM 窗口内合并多笔分红', () => {
   assert.equal(r.year, '2026一季报'); // 最近一次除权(2026-06-02)对应 2026-03-31 报告期
   assert.equal(r.details.length, 4);
   assert.equal(r.details[0].report_time, '2025半年报'); // 2025-09-04 除权（2025-06-30 报告期）
+  assert.equal(r.details[0].ex_date, '2025-09-04');
   assert.equal(r.details[3].report_time, '2026一季报');
+  assert.equal(r.details[3].ex_date, '2026-06-02');
   assert.ok(r.explanation.indexOf('近12个月(2025-08-01至2026-07-31)') === 0);
 });
 test('parseDividendRecords 无除权日(未实施)跳过', () => {

@@ -21,6 +21,7 @@ class DividendDetail:
     """分红明细（全局唯一定义）"""
     report_time: str
     dividend_per_10: float
+    ex_dividend_date: Optional[str] = None  # 除权除息日 YYYY-MM-DD
 
 
 @dataclass

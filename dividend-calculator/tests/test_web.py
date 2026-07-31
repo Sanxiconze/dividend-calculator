@@ -31,7 +31,7 @@ def test_serialize_result_with_dividend_details():
     assert data["stock_name"] == "长江电力"
     assert data["has_dividend"] is True
     assert data["dividend_details"] == [
-        {"report_time": "2025年报", "dividend_per_10": 7.33}
+        {"report_time": "2025年报", "dividend_per_10": 7.33, "ex_dividend_date": None}
     ]
 
 

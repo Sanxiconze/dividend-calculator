@@ -214,7 +214,10 @@ def _parse_fhps_detail(
     total_shares = stock_info.total_shares
     total_dividend = dps * total_shares
 
-    details = [DividendDetail(r['label'], r['dp10']) for r in records]
+    details = [
+        DividendDetail(r['label'], r['dp10'], ex_dividend_date=r['ex'].isoformat())
+        for r in records
+    ]
     latest_label = records[-1]['label']
 
     dividend_list = [

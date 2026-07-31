@@ -73,7 +73,7 @@
    * 行字段: REPORT_DATE (YYYY-MM-DD ...), PRETAX_BONUS_RMB (每10股派息),
    *         EX_DIVIDEND_DATE (除权除息日)
    * TTM: 只统计除权除息日落在 (refDate-365天, refDate] 窗口内的已除权分红。
-   * 返回: { totalDividend, year(最近分红标签), details:[{report_time, dividend_per_10}],
+   * 返回: { totalDividend, year(最近分红标签), details:[{report_time, dividend_per_10, ex_date}],
    *        explanation }
    */
   function parseDividendRecords(rows, totalShares, refDate) {
@@ -105,7 +105,7 @@
     var totalDividend = dps * totalShares;
 
     var details = records.map(function (r) {
-      return { report_time: r.label, dividend_per_10: r.dp10 };
+      return { report_time: r.label, dividend_per_10: r.dp10, ex_date: r.ex };
     });
     var latest = records[records.length - 1];
 

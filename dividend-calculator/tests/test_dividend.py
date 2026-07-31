@@ -139,6 +139,9 @@ def test_parse_fhps_detail_ttm_window():
     assert details[0].report_time == "2025半年报"   # 2025-09-04 除权
     assert details[-1].report_time == "2026一季报"
     assert [d.dividend_per_10 for d in details] == [2.1, 2.1, 4.0, 2.1]
+    assert [d.ex_dividend_date for d in details] == [
+        "2025-09-04", "2025-11-06", "2026-05-22", "2026-06-02",
+    ]
     assert "近12个月(2025-08-01至2026-07-31)除权分红" in expl
     assert "合计10派10.300元" in expl
 

@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>真实股息率计算器</title>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
-  <script src="js/calculator.js?v=20260731"></script>
-  <script src="js/datasources.js?v=20260731"></script>
-  <script src="js/app.js?v=20260731"></script>
+  <script src="js/calculator.js?v=20260801"></script>
+  <script src="js/datasources.js?v=20260801"></script>
+  <script src="js/app.js?v=20260801"></script>
   <style>
     :root {
       color-scheme: light;
@@ -348,6 +348,7 @@
             <tr>
               <th>报告期</th>
               <th>每10股派息金额</th>
+              <th>分红日期</th>
             </tr>
           </thead>
           <tbody id="dividend-details"></tbody>
@@ -831,17 +832,20 @@
       detailBody.innerHTML = '';
       if (di.dividend_details.length === 0) {
         const row = document.createElement('tr');
-        row.innerHTML = '<td colspan="2">无分红明细</td>';
+        row.innerHTML = '<td colspan="3">无分红明细</td>';
         detailBody.appendChild(row);
       } else {
         for (const detail of di.dividend_details) {
           const row = document.createElement('tr');
           const reportCell = document.createElement('td');
           const amountCell = document.createElement('td');
+          const dateCell = document.createElement('td');
           reportCell.textContent = detail.report_time;
           amountCell.textContent = `10派${detail.dividend_per_10}元`;
+          dateCell.textContent = detail.ex_date || detail.ex_dividend_date || '—';
           row.appendChild(reportCell);
           row.appendChild(amountCell);
+          row.appendChild(dateCell);
           detailBody.appendChild(row);
         }
       }
