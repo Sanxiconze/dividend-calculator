@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues 和 PRD 存放在 GitHub Issues（`flyshub/dividend-calculator`），通过 `gh` CLI 执行所有操作。
+Issues 和 PRD 存放在 GitHub Issues（`Sanxiconze/dividend-calculator`），通过 `gh` CLI 执行所有操作。
 
 ## 常用命令
 

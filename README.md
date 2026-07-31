@@ -1,6 +1,6 @@
 # 真实股息率 & 市赚率计算器（A 股）
 
-> 📈 在线查询（GitHub Pages，纯前端，无需安装）：**https://flyshub.github.io/dividend-calculator/**
+> 📈 在线查询（GitHub Pages，纯前端，无需安装）：**https://sanxiconze.github.io/dividend-calculator/**
 
 A 股估值参考工具，提供 **真实股息率** 与 **市赚率（PR）** 两项指标。采用「总额法」计算股息率，避免转送股带来的每股口径偏差；数据全部来自公开市场真实数据，**严禁虚构数据**。
 
@@ -26,7 +26,7 @@ A 股估值参考工具，提供 **真实股息率** 与 **市赚率（PR）** �
 
 ## 🔍 在线查询（GitHub Pages）
 
-**https://flyshub.github.io/dividend-calculator/**
+**https://sanxiconze.github.io/dividend-calculator/**
 
 输入 6 位股票代码（如 `600900`）或股票名称（如 `长江电力`）即可查询，全部计算在浏览器本地完成，无后端服务。
 
@@ -40,7 +40,7 @@ A 股估值参考工具，提供 **真实股息率** 与 **市赚率（PR）** �
 ### 安装
 
 ```bash
-git clone https://github.com/flyshub/dividend-calculator.git
+git clone https://github.com/Sanxiconze/dividend-calculator.git
 cd dividend-calculator/dividend-calculator
 pip install -r requirements.txt
 ```

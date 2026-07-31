@@ -113,7 +113,7 @@ N 因子 = 50% / 股利支付率，区间 [1.0, 2.0]（支付率 ≥50% → N=1.
 
 ### Issue tracker
 
-Issues 存放在 GitHub Issues（`flyshub/dividend-calculator`），通过 `gh` CLI 操作。详见 `docs/agents/issue-tracker.md`。
+Issues 存放在 GitHub Issues（`Sanxiconze/dividend-calculator`），通过 `gh` CLI 操作。详见 `docs/agents/issue-tracker.md`。
 
 ### Triage labels
 

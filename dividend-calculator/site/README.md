@@ -2,6 +2,8 @@
 
 纯前端实现的 A 股真实股息率 + 市赚率计算器，部署于 GitHub Pages，无后端。
 
+> 📈 在线访问：**https://sanxiconze.github.io/dividend-calculator/**
+
 ## 架构
 
 - **数据源**（全部支持浏览器 CORS）：
