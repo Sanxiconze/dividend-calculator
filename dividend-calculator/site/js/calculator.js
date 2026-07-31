@@ -58,8 +58,8 @@
       if (!m) continue;
       var y = parseInt(m[1], 10);
       var month = parseInt(m[2], 10);
-      /* 与 Python 一致: 12/3/4月为年报，6/9月为半年报，其余按年报 */
-      var isAnnual = (month === 12 || month === 3 || month === 4);
+      /* 与 Python 一致: 12/3/4月为年报，6/9月为半年报，其余月份也按年报 */
+      var isAnnual = !(month === 6 || month === 9);
       var label = isAnnual ? (y + '年报') : (y + '半年报');
 
       if (!yearly[y]) yearly[y] = { total: 0, hasAnnual: false, details: [] };
@@ -97,9 +97,15 @@
   function parseFinancials(rows) {
     if (!rows.length) return { roeLatest: null, roe5yMedian: null, netProfitTtm: null, netProfitAnnual: null };
 
+    /* 严格数值判断：空字符串/空白/null 视为缺失（Number('')===0 会污染中位数） */
+    function toNum(v) {
+      if (v == null || String(v).trim() === '') return NaN;
+      return Number(v);
+    }
+
     var annual = rows
       .filter(function (r) { return (r.REPORT_DATE || '').slice(5, 10) === '12-31'; })
-      .filter(function (r) { return isFinite(Number(r.ROEJQ)); })
+      .filter(function (r) { return isFinite(toNum(r.ROEJQ)); })
       .map(function (r) {
         return { year: parseInt(r.REPORT_DATE.slice(0, 4), 10), roe: Number(r.ROEJQ) };
       })
@@ -118,7 +124,7 @@
       var latestAnnual = annual[0];
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
-        if ((r.REPORT_DATE || '').slice(0, 10) === latestAnnual.year + '-12-31' && isFinite(Number(r.PARENTNETPROFIT))) {
+        if ((r.REPORT_DATE || '').slice(0, 10) === latestAnnual.year + '-12-31' && isFinite(toNum(r.PARENTNETPROFIT))) {
           netProfitAnnual = Number(r.PARENTNETPROFIT);
           break;
         }
@@ -129,7 +135,7 @@
     var dated = rows
       .map(function (r) {
         var dt = (r.REPORT_DATE || '').slice(0, 10);
-        return { date: dt, np: Number(r.PARENTNETPROFIT) };
+        return { date: dt, np: toNum(r.PARENTNETPROFIT) };
       })
       .filter(function (r) { return r.date.length === 10 && isFinite(r.np); })
       .sort(function (a, b) { return a.date < b.date ? -1 : 1; });

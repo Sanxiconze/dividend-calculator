@@ -119,6 +119,19 @@ test('parseDividendRecords 排除预披露', () => {
   assert.equal(r.year, '2024');
   assert.equal(r.totalDividend, 3 / 10 * 1000);
 });
+test('parseDividendRecords 非标月份(5/7/8/10/11)按年报', () => {
+  // 对齐 _parse_fhps_detail: 6/9月为半年报，其余月份均为年报
+  const rows = [
+    { REPORT_DATE: '2025-07-31 00:00:00', PRETAX_BONUS_RMB: 4, ASSIGN_PROGRESS: '实施分配' },
+    { REPORT_DATE: '2025-06-30 00:00:00', PRETAX_BONUS_RMB: 2, ASSIGN_PROGRESS: '实施分配' },
+    { REPORT_DATE: '2025-09-30 00:00:00', PRETAX_BONUS_RMB: 1, ASSIGN_PROGRESS: '实施分配' },
+  ];
+  const r = Calc.parseDividendRecords(rows, 1000);
+  assert.equal(r.year, '2025');
+  // 07月(年报) + 06月(半年报) + 09月(半年报) → 财年 2025 有年报
+  assert.equal(r.details.filter(d => d.report_time === '2025年报').length, 1);
+  assert.equal(r.totalDividend, (4 + 2 + 1) / 10 * 1000);
+});
 test('parseDividendRecords 无分红', () => {
   const r = Calc.parseDividendRecords([], 1000);
   assert.equal(r.totalDividend, 0);
@@ -126,6 +139,25 @@ test('parseDividendRecords 无分红', () => {
 });
 
 // ---- parseFinancials（TTM = 最新累计 + 上年全年 - 上年同期）----
+test('parseFinancials 空字符串不污染中位数', () => {
+  const rows = [
+    { REPORT_DATE: '2025-12-31 00:00:00', ROEJQ: '15.9', PARENTNETPROFIT: '345.03' },
+    { REPORT_DATE: '2024-12-31 00:00:00', ROEJQ: '', PARENTNETPROFIT: '324.96' },
+    { REPORT_DATE: '2023-12-31 00:00:00', ROEJQ: '13.0', PARENTNETPROFIT: '272.39' },
+  ];
+  const r = Calc.parseFinancials(rows);
+  assert.equal(r.roeLatest, 15.9);
+  assert.equal(r.roe5yMedian, 15.9);  // 有效年报 [13.0, 15.9]，len//2=1 → 15.9（空字符串被排除）
+  assert.equal(r.netProfitAnnual, 345.03);
+});
+
+test('computePr 亏损股 pr_warning 由 app 层拼接（verify 覆盖）', () => {
+  const r = Calc.computePr({ pe_ttm: 50, pb: 3, roe_latest: 5, net_profit_annual: -100, dividend_total: null });
+  assert.equal(r.is_loss_stock, true);
+  assert.equal(r.pr_basic, null);
+  assert.equal(r.valuation_zone, '无法判定');
+});
+
 test('parseFinancials ROE中位数与TTM', () => {
   const rows = [
     { REPORT_DATE: '2026-03-31 00:00:00', ROEJQ: '9.0', PARENTNETPROFIT: '67.61' },

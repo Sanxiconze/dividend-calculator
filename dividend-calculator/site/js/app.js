@@ -63,6 +63,14 @@
 
     var indClass = Calculator.classifyIndustry(industry);
 
+    /* 亏损股提示：与 pr.py 一致，追加"该股为亏损股，市赚率不适用" */
+    var prWarning = indClass.warning;
+    if (pr.is_loss_stock) {
+      prWarning = prWarning
+        ? prWarning + '；该股为亏损股，市赚率不适用'
+        : '该股为亏损股，市赚率不适用';
+    }
+
     return {
       stock_info: {
         stock_code: quote.stock_code,
@@ -88,7 +96,7 @@
         pr_corrected: pr.pr_corrected,
         pr_pb: pr.pr_pb,
         valuation_zone: pr.valuation_zone,
-        pr_warning: indClass.warning,
+        pr_warning: prWarning,
         payout_ratio: pr.payout_ratio,
         n_factor: pr.n_factor,
         is_loss_stock: pr.is_loss_stock,

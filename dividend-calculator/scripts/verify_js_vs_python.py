@@ -147,6 +147,9 @@ def compute_python(raw: dict) -> dict:
     # 4. 市赚率公式（与 JS computePr 相同核心）
     net_annual = fin["net_profit_annual"]
     is_loss = net_annual is not None and net_annual <= 0
+    if is_loss:
+        warning = warning + "；该股为亏损股，市赚率不适用" if warning else "该股为亏损股，市赚率不适用"
+
     payout = None
     n_factor = None
     if net_annual is not None and net_annual > 0 and total_div > 0:
